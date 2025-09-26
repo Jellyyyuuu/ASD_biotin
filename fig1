@@ -1,0 +1,137 @@
+
+################################################species alpha diversity
+library(vegan)
+shannon=diversity(species_relab, index="shannon")
+richness <- rowSums(species_relab != 0)
+alpha_diversity <- data.frame(shannon, richness)
+
+long_format <- alpha_diversity %>%
+  rownames_to_column(var = "SampleID") %>%
+  pivot_longer(cols = -"SampleID",
+               names_to = "index", 
+               values_to = "values") %>%
+  mutate(Group = ifelse(grepl("^A", SampleID), "ASD", "TD")) 
+
+colors <- c("red", "blue")
+order=colnames(alpha_diversity)
+order=as.factor(order)
+long_format <- long_format %>%
+  mutate(index = factor(index, levels = order))
+
+################################################pathway alpha diversity
+library(vegan)
+shannon=diversity(ko_relab, index="shannon")
+richness <- rowSums(ko_relab != 0)
+alpha_diversity <- data.frame(shannon, richness)
+
+long_format <- alpha_diversity %>%
+  rownames_to_column(var = "SampleID") %>%
+  pivot_longer(cols = -"SampleID",
+               names_to = "index", 
+               values_to = "values") %>%
+  mutate(Group = ifelse(grepl("^A", SampleID), "ASD", "TD")) 
+
+colors <- c("red", "blue")
+order=colnames(alpha_diversity)
+order=as.factor(order)
+long_format <- long_format %>%
+  mutate(index = factor(index, levels = order))
+
+################################################plot
+library(ggpubr)
+library(ggplot2)
+p <- ggplot(long_format, aes(x = Group, y = values)) +
+  geom_boxplot(aes(fill = Group), alpha = 0.5, outlier.shape = NA) +
+  geom_jitter(aes(color = Group), width = 0.2, size = 2, alpha = 0.7) +
+  scale_fill_manual(values = colors) +  # Set fill colors for the boxplot
+  scale_color_manual(values = colors) +  # Set color for the jittered points
+  labs(x = "Group", y = "values") +
+  facet_wrap(~index, scales="free_y",ncol = 4) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis text
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank()   # Remove minor grid lines
+  )
+  
+p <- p +geom_pwc(
+  aes(group = Group, color = Group),  # Group by 'Group'
+  method = "t_test", 
+  label = "p",
+  bracket.nudge.y= 0.1,
+  p.adjust.method="none",
+  tip.length = 0, 
+  group.by = "x.var",
+  bracket.group.by = "x.var",
+  vjust = 0.1,
+  size=0.8,label.size = 5
+)
+
+p
+
+################################################PERMANOVA
+taxa_metadata_merged <- merge(metadata,species_relab, by.x = "row.names", by.y = "row.names", all = FALSE)
+raw.data.matrix=as.matrix(taxa_metadata_merged[,29:1398]) #exlude columns for metadata
+metadata=taxa_metadata_merged[,1:28]
+sqrt.data=sqrt(raw.data.matrix)
+library(vegan)
+dis.matrix_sqrt<-vegdist(sqrt.data, method='bray')
+
+set.seed(1)
+permanova <- adonis2(dis.matrix_sqrt~ Group+Age+GI+ADHD+allergy+unhealthy_diet+fibre_intake+Anxiety, by = "terms",
+                       data=taxa_metadata_merged, permutations = 999, method="bray")
+
+sink("permanova_taxa.txt")
+print(permanova)
+sink()
+
+################################################Plot PERMANOVA
+library(ggplot2)
+library(reshape2)
+
+permanova$neg_log10_pval = -log10(permanova$pval)
+
+long_format <- permanova %>%
+  rownames_to_column(var = "Covariate") %>%
+  pivot_longer(cols = -"Covariate",
+               names_to = "parameter", 
+               values_to = "value") %>%
+  mutate(Group = ifelse(grepl("^A", Covariate), "ASD", "TD")) 
+
+# Calculate the order of covariates based on R2 values
+r2_order <- long_format[long_format$parameter == "R2", ]
+r2_order <- r2_order[order(-r2_order$value), ]
+r2_order=r2_order$Covariate
+r2_order=as.factor(r2_order)
+long_format <- long_format %>%
+  mutate(Covariate = factor(Covariate, levels = r2_order))
+
+long_format$parameter <- factor(long_format$parameter, levels = c("R2","neg_log10_pval"))
+
+threshold <- -log10(0.05)
+
+ggplot(long_format, aes(x = Covariate, y = value)) +
+  geom_bar(stat = "identity", position = "dodge", aes(fill = parameter)) +
+  facet_wrap(~ parameter, scales = "free_y", ncol = 1) +
+  labs(title = "PERMANOVA", y = "Value", x = "Covariate") +
+  scale_fill_manual(values = c("neg_log10_pval" = "#197BBD", "R2" = "#CF5C36")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  geom_hline(data = long_format %>% filter(parameter == "neg_log10_pval"),
+             aes(yintercept = threshold), 
+             linetype = "dashed", color = "red")
+
+################################################Plot PCoA
+
+
+
+
+
+
+
+
+
+

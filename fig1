@@ -37,7 +37,7 @@ order=as.factor(order)
 long_format <- long_format %>%
   mutate(index = factor(index, levels = order))
 
-################################################plot
+################################################plot alpha diversity
 library(ggpubr)
 library(ggplot2)
 p <- ggplot(long_format, aes(x = Group, y = values)) +
@@ -68,6 +68,18 @@ p <- p +geom_pwc(
 )
 
 p
+
+
+################################################GBM pathways
+library(omixerRpm)
+
+mods <- rpm(ko_relab, minimum.coverage=0.5, annotation = 1)
+coverage <- asDataFrame(mods, "coverage")
+abundance <- asDataFrame(mods, "abundance")
+gbm_relab=abundance
+
+write.csv(gbm_relab,"gbm_relab.csv")
+
 
 ################################################PERMANOVA
 taxa_metadata_merged <- merge(metadata,species_relab, by.x = "row.names", by.y = "row.names", all = FALSE)
@@ -125,9 +137,288 @@ ggplot(long_format, aes(x = Covariate, y = value)) +
              linetype = "dashed", color = "red")
 
 ################################################Plot PCoA
+library(vegan)
+pcoa_results <- cmdscale (dis.matrix_sqrt, eig = TRUE)
+ordiplot (pcoa_results, display = 'sites', type = 'point')
+
+colors=c("#FF0000","#0040FF")
+names(colors) <- unique(metadata$Group)
+
+plot(pcoa_results$points, asp = 1, pch = 16, col = colors[metadata$Group],
+     xlab = paste("PCoA1 (", round(percentage_variance[1], 2), "%)", sep = ""),
+     ylab = paste("PCoA2 (", round(percentage_variance[2], 2), "%)", sep = ""))
+
+pcoa_data <- data.frame(PCoA1 = pcoa_results$points[, 1],
+                        PCoA2 = pcoa_results$points[, 2],
+                        Group = metadata$Group)
+
+centroids <- aggregate(cbind(PCoA1, PCoA2) ~ Group, data = pcoa_data, FUN = mean)
+points(centroids$PCoA1, centroids$PCoA2, pch = 4, cex = 2, col = "black")
+
+for (i in 1:nrow(pcoa_data)) {
+  segments(pcoa_data$PCoA1[i], pcoa_data$PCoA2[i], 
+           centroids$PCoA1[centroids$Group == pcoa_data$Group[i]], 
+           centroids$PCoA2[centroids$Group == pcoa_data$Group[i]], 
+           #col = colors[pcoa_data$Group[i]], 
+           col = rgb(t(col2rgb(colors[pcoa_data$Group[i]])), alpha = 127, maxColorValue = 255), 
+           lty = 1)
+}
+legend("topleft", legend = names(colors), pch = 16, col = colors, cex = 0.8)
 
 
+################################################differential species and GBM pathways
+library(Maaslin2)
 
+prevalence <- colSums(species_relab > 0) / nrow(species_relab)
+filtered_species <- species_relab[,prevalence >= 0.10 ]
+
+library(Maaslin2)
+fit_data2 = Maaslin2(input_data     = filtered_species, 
+                     input_metadata = metadata, 
+                     min_abundance = -Inf,
+                     min_prevalence = 0,
+                     normalization  = "NONE",
+                     transform = "LOG",
+                     output         = "differential_species", 
+                     fixed_effects  = c("Group","Age","GI"))
+
+fit_data2 = Maaslin2(input_data     = gbm_relab, 
+                     input_metadata = metadata, 
+                     min_abundance = -Inf,
+                     min_prevalence = 0,
+                     normalization  = "NONE",
+                     transform = "LOG",
+                     output         = "differential_gbm_pathways", 
+                     fixed_effects  = c("Group"))
+
+################################################volcano plot
+library(ggrepel)
+
+volcano_plot$`-log10(pvalue)`=-log10(volcano_plot$pvalue)
+volcano_plot$differential_metabolites <- "NO"
+volcano_plot$differential_metabolites[volcano_plot$log2fc > 0.5 & 
+                                        volcano_plot$pvalue < 0.05 & 
+                                        volcano_plot$average_vip >= 1] <- "UP"
+volcano_plot$differential_metabolites[volcano_plot$log2fc < -0.5 & 
+                                        volcano_plot$pvalue < 0.05 & 
+                                        volcano_plot$average_vip >= 1] <- "DOWN"
+
+volcano_plot$differential_metabolites[volcano_plot$`Row.names` == "Catechin"] <- "NO" #exclude metabolites showed contradicting direction of change in fold change analysis and maaslin analysis
+volcano_plot$delabel <- NA
+volcano_plot$metabolite_name <- volcano_plot$Row.names
+volcano_plot$delabel[volcano_plot$differential_metabolites != "NO"] <- volcano_plot$metabolite_name[volcano_plot$differential_metabolites != "NO"]
+volcano_plot$delabel[volcano_plot$differential_metabolites == "UP"] <- volcano_plot$metabolite_name[volcano_plot$differential_metabolites == "UP"]
+volcano_plot$delabel[volcano_plot$differential_metabolites == "DOWN"] <- volcano_plot$metabolite_name[volcano_plot$differential_metabolites == "DOWN"]
+
+p <- ggplot(data = volcano_plot, 
+            aes(x = log2fc, y = -log10(pvalue), col = differential_metabolites, label = delabel)) +
+  geom_point() + 
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust = 0.5, face = "bold")) +
+  geom_label_repel() +
+  scale_color_manual(values = c("#226CE0", "grey", "#CA3C25")) +
+  geom_vline(xintercept=c(-0.5, 0.5), col = "#8F5C38", linetype = "longdash") +
+  geom_hline(yintercept = -log10(0.05), col = "#8F5C38", linetype = "longdash") +
+  labs(title = "differential metabolites")
+
+# Print the plot
+print(p)
+
+################################################predictive power of different makrers
+taxa_gbm_mereged <- merge(species_relab,gbm_relab, by.x = "row.names", by.y = "row.names", all = FALSE)
+metabolite_taxa_gbm_mereged <- merge(metabolite_log,taxa_gbm_mereged, by.x = "row.names", by.y = "row.names", all = FALSE)
+metabolite_taxa_gbm_mereged$`Disease_State` <- ifelse(startsWith(rownames(metabolite_taxa_gbm_mereged), "A"), "ASD", "TD")
+metabolite_taxa_gbm_mereged <- metabolite_taxa_gbm_mereged[, c("Disease_State", setdiff(names(metabolite_taxa_gbm_mereged), "Disease_State"))]
+
+
+library(caret)
+seeds <- seq(from = 1, by = 2, length.out = 15)
+results_df <- data.frame(
+  seed = seeds,
+  asd_auc_taxa = NA,
+  asd_auc_gbm = NA,
+  asd_auc_metabolite = NA,
+  asd_auc_ensembled = NA
+)
+for (i in seeds) {
+  set.seed(i)
+  trainRowNumbers <- createDataPartition(metabolite_taxa_gbm_mereged$Disease_State, p = 0.7, list = FALSE)
+  trainData <- metabolite_taxa_gbm_mereged[trainRowNumbers, ]
+  testData <- metabolite_taxa_gbm_mereged[-trainRowNumbers, ]  
+  fitControl <- trainControl(method = "repeatedcv", 
+                             number = 10, 
+                             repeats = 5, 
+                             summaryFunction = twoClassSummary, 
+                             classProbs = TRUE, 
+                             savePredictions = TRUE)
+  mtry <- 10
+  tunegrid <- expand.grid(.mtry = c(1:mtry))
+  
+  rf_train_taxa <- train(Disease_State ~ 
+                           `s__Clostridia_unclassified_SGB4447`+
+                         `s__Bilophila_wadsworthia`+
+                         `s__Bacteroides_uniformis`+
+                         `s__Weissella_confusa`+
+                         `s__GGB9581_SGB14999`+
+                         `s__Allisonella_histaminiformans`+
+                         `s__Lachnoclostridium_edouardi`+
+                         `s__Actinobaculum_sp_oral_taxon_183`+
+                         `s__Actinomyces_dentalis`+
+                         `s__Actinomyces_massiliensis`+
+                         `s__Actinomyces_gerencseriae`,
+                         data = trainData, method = 'rf', 
+                         metric = 'ROC', tuneGrid = tunegrid, trControl = fitControl)
+  
+  pred_taxa <- predict(rf_train_taxa, newdata = testData, type = "prob", excluded_class_id = 2L)
+  auc_taxa <- caTools::colAUC(pred_taxa, testData$Disease_State)
+  results_df[i, "asd_auc_taxa"] <- auc_taxa[1, 1]
+  
+  rf_train_gbm <- train(Disease_State ~ `phenylalanine degradation`+
+                          `anaerobic fatty acid beta-oxidation`+
+                          `lactate production`+
+                          `arabinose degradation`+
+                          `arabinoxylan degradation`+
+                          `tryptophan degradation`+
+                          `arginine degradation IV`+
+                          `tyrosine degradation I`+
+                          `homoacetogenesis`+
+                          `propionate production I`+
+                          `lactate consumption I`+
+                          `pectin degradation I`+
+                          `ribose degradation`+
+                          `glutamine degradation II`+
+                          `maltose degradation`,
+                        data = trainData, method = 'rf', 
+                        metric = 'ROC', tuneGrid = tunegrid, trControl = fitControl)
+  
+  pred_gbm <- predict(rf_train_gbm, newdata = testData, type = "prob", excluded_class_id = 2L)
+  auc_gbm <- caTools::colAUC(pred_gbm, testData$Disease_State)
+  results_df[i, "asd_auc_gbm"] <- auc_gbm[1, 1]
+
+  rf_train_metabolite <- train(Disease_State ~ `N-Acetylserotonin (NAS)`+
+                           `Ribitol`+
+                           `Mandelic acid`+
+                           `4-Hydroxy-3-methylbenzoic acid`+
+                           `10-Heptadecenoic acid`+
+                           `Imidazoleacetic acid`+
+                           `5-Aminoimidazole-4-carboxamide`+
+                           `Pimelic acid`+
+                           `Dodecanedioic acid`+
+                           `Phthalic acid`+
+                           `Oxindole-3-acetic acid`+
+                           `10Z-Heptadecenoic acid`+
+                           `Allantoin`+
+                           `Suberic acid`+
+                           `Hydroxypropionic acid`+
+                           `Indole-3-propionic acid`+
+                           `Biotin`+
+                           `Behenic acid`+
+                           `Azelaic acid`+
+                           `Shikimic acid`+
+                           `Alanylglycine`+
+                           `Hydrochlorothiazide`+
+                           `Methyl vanillate`,
+                         data = trainData, method = 'rf', 
+                         metric = 'ROC', tuneGrid = tunegrid, trControl = fitControl)
+  
+  pred_metabolite <- predict(rf_train_metabolite, newdata = testData, type = "prob", excluded_class_id = 2L)
+  auc_metabolite <- caTools::colAUC(pred_metabolite, testData$Disease_State)
+  results_df[i, "asd_auc_metabolite"] <- auc_metabolite[1, 1]
+
+  rf_train_ensembled <- train(Disease_State ~ 
+                          `N-Acetylserotonin (NAS)`+
+                          `Ribitol`+
+                          `Mandelic acid`+
+                          `4-Hydroxy-3-methylbenzoic acid`+
+                          `10-Heptadecenoic acid`+
+                          `Imidazoleacetic acid`+
+                          `5-Aminoimidazole-4-carboxamide`+
+                          `Pimelic acid`+
+                          `Dodecanedioic acid`+
+                          `Phthalic acid`+
+                          `Oxindole-3-acetic acid`+
+                          `10Z-Heptadecenoic acid`+
+                          `Allantoin`+
+                          `Suberic acid`+
+                          `Hydroxypropionic acid`+
+                          `Indole-3-propionic acid`+
+                          `Biotin`+
+                          `Behenic acid`+
+                          `Azelaic acid`+
+                          `Shikimic acid`+
+                          `Alanylglycine`+
+                          `Hydrochlorothiazide`+
+                          `Methyl vanillate`+
+                          `s__Clostridia_unclassified_SGB4447`+
+                          `s__Bilophila_wadsworthia`+
+                          `s__Bacteroides_uniformis`+
+                          `s__Weissella_confusa`+
+                          `s__GGB9581_SGB14999`+
+                          `s__Allisonella_histaminiformans`+
+                          `s__Lachnoclostridium_edouardi`+
+                          `s__Actinobaculum_sp_oral_taxon_183`+
+                          `s__Actinomyces_dentalis`+
+                          `s__Actinomyces_massiliensis`+
+                          `s__Actinomyces_gerencseriae`+
+                          `phenylalanine degradation`+
+                          `anaerobic fatty acid beta-oxidation`+
+                          `lactate production`+
+                          `arabinose degradation`+
+                          `arabinoxylan degradation`+
+                          `tryptophan degradation`+
+                          `arginine degradation IV`+
+                          `tyrosine degradation I`+
+                          `homoacetogenesis`+
+                          `propionate production I`+
+                          `lactate consumption I`+
+                          `pectin degradation I`+
+                          `ribose degradation`+
+                          `glutamine degradation II`+
+                          `maltose degradation`,
+                        data = trainData, method = 'rf', 
+                        metric = 'ROC', tuneGrid = tunegrid, trControl = fitControl)
+
+  pred_ensembled <- predict(rf_train_ensembled, newdata = testData, type = "prob", excluded_class_id = 2L)
+  auc_ensembled <- caTools::colAUC(pred_ensembled, testData$Disease_State)
+  results_df[i, "asd_auc_ensembled"] <- auc_ensembled[1, 1]
+}
+
+
+results_df <- results_df[, !(names(results_df) == "seed")]
+results_df=na.omit(results_df)
+
+library(reshape2)
+results_long <- melt(results_df, id.vars = NULL, variable.name = "Model", value.name = "AUC")
+
+library(ggpubr)
+p=ggplot(results_long, aes(x = Model, y = AUC)) +
+  geom_boxplot(aes(fill = Model), alpha = 0.5, outlier.shape = NA) +
+  geom_jitter(aes(color = Model), width = 0.2, size = 2, alpha = 0.7) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  labs(x = "Model", y = "AUC") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) 
+
+p=p +geom_pwc(
+  aes(group = Model, color = Model),
+  method = "t_test", 
+  label = "p.signif",
+  bracket.nudge.y= 0.1,
+  p.adjust.method="none",
+  tip.length = 0, 
+  group.by = "x.var",
+  bracket.group.by = "x.var",
+  vjust = 0.1,
+  size=0.8,label.size = 5
+)
+
+p
 
 
 

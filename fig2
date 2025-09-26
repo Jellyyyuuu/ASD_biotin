@@ -1,1 +1,124 @@
 
+# Combine by row names
+full_fmt_species_relab <- merge(fmt_rest_species_relab, species_relab, by = "row.names", all = TRUE)
+full_fmt_species_relab[is.na(full_fmt_species_relab)] <- 0
+
+
+taxa_metadata_mereged <- merge(metadata_filtered,species_relab, by.x = "row.names", by.y = "row.names", all = TRUE)
+metacyc_metadata_mereged <- merge(metadata_filtered,metacyc_relab, by.x = "row.names", by.y = "row.names", all = TRUE)
+
+raw.data.matrix_metacyc=as.matrix(metacyc_metadata_mereged[,7:424])
+raw.data.matrix_taxa=as.matrix(taxa_metadata_mereged[,7:388])
+
+sqrt.data_metacyc=sqrt(raw.data.matrix_metacyc)
+sqrt.data_taxa=sqrt(raw.data.matrix_taxa)
+
+
+library(vegan)
+dis.matrix_sqrt_taxa<-vegdist(sqrt.data_taxa, method='bray')
+dis.matrix_sqrt_metacyc<-vegdist(sqrt.data_metacyc, method='bray')
+
+
+#BMI adjusted diet for permanova
+set.seed(1) #reproducible results
+permanova_raw<-adonis2(dis.matrix_sqrt~Group, by = "terms",
+                       data=taxa_metadata_mereged, permutations = 999, method="bray")
+print(permanova_raw)
+sink("taxa_permanova.txt")
+print(permanova_raw)
+sink()
+
+
+
+
+
+##############PCoA
+pcoa_taxa <- cmdscale (dis.matrix_sqrt_taxa, eig = TRUE)
+ordiplot (pcoa_taxa, display = 'sites', type = 'point')
+
+
+pcoa_metacyc <- cmdscale (dis.matrix_sqrt_metacyc, eig = TRUE)
+ordiplot (pcoa_metacyc, display = 'sites', type = 'point')
+
+
+# Assign colors to the study groups
+colors <- c("lightpink", "lightgreen", "lightblue", "#AFA8F3")
+names(colors) <- c("PBS", "ASD_1", "ASD_2", "TD")
+
+plot(pcoa_taxa$points, asp = 1, pch = 16, col = colors[taxa_metadata_mereged$Group],
+     xlab = "PCoA1", ylab = "PCoA2",cex = 1.5)
+legend("bottomleft", legend = names(colors), pch = 20, col = colors, cex = 1.5)
+group <- as.factor(taxa_metadata_mereged$Group)
+ordiellipse(pcoa_taxa, groups = group, col = colors[levels(group)], lwd = 2, label = TRUE,cex = 1.5)
+
+
+plot(pcoa_metacyc$points, asp = 1, pch = 16, col = colors[metacyc_metadata_mereged$Group],
+     xlab = "PCoA1", ylab = "PCoA2",cex = 1.5)
+legend("bottomleft", legend = names(colors), pch = 20, col = colors, cex = 1.5)
+group <- as.factor(metacyc_metadata_mereged$Group)
+ordiellipse(pcoa_metacyc, groups = group, col = colors[levels(group)], lwd = 2, label = TRUE,cex = 1.5)
+
+
+
+#####plot
+par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
+x_lim <- c(-0.35, 0.31)  # Adjust based on your data
+y_lim <- c(-0.3, 0.35) 
+
+
+x_lim <- c(-0.15, 0.12)  # Adjust based on your data
+y_lim <- c(-0.1, 0.1) 
+
+plot(pcoa_taxa$points, asp = 1, pch = 16, 
+     col = colors[taxa_metadata_mereged$Group],
+     xlab = "PCoA1", ylab = "PCoA2", cex = 1.5)
+
+
+
+############Bold the axes
+plot(pcoa_taxa$points, asp = 1, pch = 16, 
+     col = colors[taxa_metadata_mereged$Group],
+     xlab = "PCoA1", ylab = "PCoA2", cex = 1.5,
+     xlim = x_lim, ylim = y_lim,
+     axes = FALSE)  # Suppress default axes
+# Add custom axes with bold lines
+axis(1, lwd = 2)  # X-axis with bold line
+axis(2, lwd = 2)  # Y-axis with bold line
+# Box around the plot with bold line
+box(lwd = 2)  # Add box with bold line
+
+
+# Define the desired order
+desired_order <- c("PBS", "ASD_1", "ASD_2", "TD")
+# Reorder the colors vector
+ordered_colors <- colors[desired_order]
+
+# Add legend
+legend("topright", inset=c(0,0),  legend = names(colors), pch=16, col = colors,cex = 1, title="Group")
+
+library(ellipse) 
+for (g in levels(group)) {
+  group_points <- pcoa_taxa$points[group == g, ]
+  
+  # Calculate the mean and covariance
+  group_mean <- colMeans(group_points)
+  group_cov <- cov(group_points)
+  
+  # Generate ellipse data with a lower confidence level
+  ellipse_data <- ellipse(group_cov, centre = group_mean, level = 0.8)  # Adjust this value
+  
+  # Optionally scale the ellipse points
+  scale_factor <-1  # Adjust this value to scale the ellipse size
+  ellipse_data <- ellipse_data * scale_factor
+  
+  # Add background color for the ellipse
+  polygon(ellipse_data, border = NA, col = adjustcolor(colors[g], alpha.f = 0.3))
+  
+  # Draw ellipse outline
+  lines(ellipse_data, col = colors[g], lwd = 2)
+}
+
+
+
+
+

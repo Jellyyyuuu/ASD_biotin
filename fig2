@@ -1,11 +1,6 @@
-
-# Combine by row names
-full_fmt_species_relab <- merge(fmt_rest_species_relab, species_relab, by = "row.names", all = TRUE)
-full_fmt_species_relab[is.na(full_fmt_species_relab)] <- 0
-
-
-taxa_metadata_mereged <- merge(metadata_filtered,species_relab, by.x = "row.names", by.y = "row.names", all = TRUE)
-metacyc_metadata_mereged <- merge(metadata_filtered,metacyc_relab, by.x = "row.names", by.y = "row.names", all = TRUE)
+################################################PERMANOVA
+taxa_metadata_mereged <- merge(metadata,species_relab, by.x = "row.names", by.y = "row.names", all = TRUE)
+metacyc_metadata_mereged <- merge(metadata,metacyc_relab, by.x = "row.names", by.y = "row.names", all = TRUE)
 
 raw.data.matrix_metacyc=as.matrix(metacyc_metadata_mereged[,7:424])
 raw.data.matrix_taxa=as.matrix(taxa_metadata_mereged[,7:388])
@@ -13,26 +8,17 @@ raw.data.matrix_taxa=as.matrix(taxa_metadata_mereged[,7:388])
 sqrt.data_metacyc=sqrt(raw.data.matrix_metacyc)
 sqrt.data_taxa=sqrt(raw.data.matrix_taxa)
 
-
 library(vegan)
 dis.matrix_sqrt_taxa<-vegdist(sqrt.data_taxa, method='bray')
 dis.matrix_sqrt_metacyc<-vegdist(sqrt.data_metacyc, method='bray')
 
-
-#BMI adjusted diet for permanova
-set.seed(1) #reproducible results
-permanova_raw<-adonis2(dis.matrix_sqrt~Group, by = "terms",
+set.seed(1)
+permanova_taxa<-adonis2(dis.matrix_sqrt_taxa~Group, by = "terms",
                        data=taxa_metadata_mereged, permutations = 999, method="bray")
-print(permanova_raw)
-sink("taxa_permanova.txt")
-print(permanova_raw)
-sink()
+permanova_metacyc<-adonis2(dis.matrix_sqrt_metacyc~Group, by = "terms",
+                       data=metacyc_metadata_mereged, permutations = 999, method="bray")
 
-
-
-
-
-##############PCoA
+################################################PCoA
 pcoa_taxa <- cmdscale (dis.matrix_sqrt_taxa, eig = TRUE)
 ordiplot (pcoa_taxa, display = 'sites', type = 'point')
 

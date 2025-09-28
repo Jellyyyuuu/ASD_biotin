@@ -237,3 +237,19 @@ combined_plot <- (p_K00652 + p_K00833) / (p_K01935 + p_K01012) +
   theme(legend.position = "bottom")   
 combined_plot
 
+
+
+################################################biotin ko associated species
+#on terminal with the halla package
+halla -x ~/species_relab.txt -y ~/diff_biotin_ko_relab.txt -o species_vs_biotin_ko -m spearman --fdr_alpha 0.05
+
+#select species display significant positive associations with all the biotin-ko
+result_test <- all_associations %>%
+  filter(`q-values` < 0.1, association > 0) %>%
+  group_by(X_features) %>%
+  filter(n_distinct(Y_features) > 3) %>%
+  ungroup()
+
+
+
+

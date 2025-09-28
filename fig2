@@ -18,91 +18,252 @@ permanova_taxa<-adonis2(dis.matrix_sqrt_taxa~Group, by = "terms",
 permanova_metacyc<-adonis2(dis.matrix_sqrt_metacyc~Group, by = "terms",
                        data=metacyc_metadata_mereged, permutations = 999, method="bray")
 
-################################################PCoA
-pcoa_taxa <- cmdscale (dis.matrix_sqrt_taxa, eig = TRUE)
-ordiplot (pcoa_taxa, display = 'sites', type = 'point')
+################################################relative abundance of top10 genera
+library(dplyr)
+library(tidyverse)
+library(tibble)
+library(randomcoloR)
+
+genus_long <- fmt_genus_relab %>%
+  rownames_to_column(var = "genus") %>%
+  pivot_longer(cols = -genus,
+               names_to = "sample_id", 
+               values_to = "relative_abundance")
+
+metadata=metadata%>% rownames_to_column(var="sample_id")
+
+data_merged <- genus_long %>%
+  left_join(metadata, by = "sample_id")
+
+data_merged_filtered <- data_merged %>%
+  filter(genus != "UNCLASSIFIED")
+
+data_merged_filtered <- data_merged_filtered %>%
+  filter(!startsWith(genus, "g__GGB"))
+
+top10_genera <- data_merged_filtered %>%
+  group_by(sample_id) %>%
+  slice_max(order_by = relative_abundance, n = 10, with_ties = FALSE) %>%
+  ungroup()
+
+genus=unique(top10_genera$genus)
+
+n <- 47
+colors <- distinctColorPalette(n)
+names(colors)=genus
+
+colors <- c(
+  g__Lactobacillus = "#E098E2",
+  g__Ligilactobacillus = "#B0E34D",
+  g__Kroppenstedtia = "#979851",
+  g__Acidaminococcus = "#E3D482",
+  g__Acutalibacter = "#E4C530",
+  g__Adlercreutzia = "#AFEE85",
+  g__Aerococcus = "#AAB7B7",
+  g__Agathobaculum = "#E7EE40",
+  g__Akkermansia = "#E2BCB7",
+  g__Alistipes = "#8E896B",
+  g__Staphylococcus = "#72D9E9",
+  g__Anaerofustis = "#DC9883",
+  g__Anaerostipes = "#B2EBDD",
+  g__Anaerotruncus = "#5CB2E4",
+  g__Lactococcus = "#9B9FD9",
+  g__Lachnospiraceae_unclassified = "#FFEBE1",
+  g__Bifidobacterium = "#A332E7",
+  g__Dubosiella = "#FFD1BA",
+  g__Muribaculaceae_unclassified = "#006E04",
+  g__Duncaniella = "#BBF4FF",
+  g__Barnesiella = "#5FEEE5",
+  g__Erysipelotrichaceae_unclassified = "#7CE160",
+  g__Helicobacter = "black",
+  g__Paramuribaculum = "#48F071",
+  g__Bacteroidales_unclassified = "#DC4DD8",
+  g__Rikenellaceae_unclassified = "#D57F48",
+  g__Muribaculum = "#71EBBF",
+  g__Prevotella = "#7B8FEA",
+  g__Bacteria_unclassified = "#62E895",
+  g__Clostridiaceae_unclassified = "#AFCBEB",
+  g__Phocaeicola = "#E46E85",
+  g__Bacteroides = "red",
+  g__Oscillibacter = "#E6F1C4",
+  g__Enterococcus = "#57A075",
+  g__Neglectibacter = "#E09CB9",
+  g__Mucispirillum = "#E6E9E3",
+  g__Christensenella = "#7461DD",
+  g__Parabacteroides = "#9B6671",
+  g__Turicibacter = "#E9C99B",
+  g__Desulfovibrio = "#DDEA69",
+  g__Schaedlerella = "#E2C3E5",
+  g__Brevibacterium = "#6AC7BE",
+  g__Oscillospiraceae_unclassified = "#C87AE5",
+  g__Romboutsia = "#B9CCA8",
+  g__Parvibacter = "#79F032",
+  g__Eubacteriales_unclassified = "#4F8189",
+  g__Sporofaciens = "#A1DD9E"
+)
 
 
-pcoa_metacyc <- cmdscale (dis.matrix_sqrt_metacyc, eig = TRUE)
-ordiplot (pcoa_metacyc, display = 'sites', type = 'point')
+top10_genera <- top10_genera %>%
+  mutate(Group = factor(Group, levels = c("PBS", "ASD_1", "ASD_2", "TD")))
+
+p=ggplot(top10_genera, aes(x = sample, y = relative_abundance, fill = genus)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~ Group, scales = "free_x",ncol=4) +
+  labs(title = "Relative Abundance of Top 10 Dominant Genera",
+       x = "Timepoint",
+       y = "Average Relative Abundance") +
+  scale_fill_manual(values = colors) + 
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "right"
+        )
+p
+
+################################################chordplot for Bacteroides-associated vitamin pathways
+library(circlize)
+
+pathways=c(
+  "PWY-7282: 4-amino-2-methyl-5-diphosphomethylpyrimidine biosynthesis II",
+  "THISYN-PWY: superpathway of thiamine diphosphate biosynthesis I",
+  "PWY-6897: thiamine diphosphate salvage II",
+  "PWY-7357: thiamine phosphate formation from pyrithiamine and oxythiamine (yeast)",
+  "THISYNARA-PWY: superpathway of thiamine diphosphate biosynthesis III (eukaryotes)",
+  "PWY-6892: thiazole component of thiamine diphosphate biosynthesis I",
+  "PWY-6168: flavin biosynthesis III (fungi)",
+  "RIBOSYN2-PWY: flavin biosynthesis I (bacteria and plants)",
+  "PANTO-PWY: phosphopantothenate biosynthesis I",
+  "PANTOSYN-PWY: superpathway of coenzyme A biosynthesis I (bacteria)",
+  "PWY0-845: superpathway of pyridoxal 5'-phosphate biosynthesis and salvage",
+  "PYRIDOXSYN-PWY: pyridoxal 5'-phosphate biosynthesis I",
+  "BIOTIN-BIOSYNTHESIS-PWY: biotin biosynthesis I",
+  "PWY-6519: 8-amino-7-oxononanoate biosynthesis I",
+  "PWY-6147: 6-hydroxymethyl-dihydropterin diphosphate biosynthesis I",
+  "1CMET2-PWY: folate transformations III (E. coli)",
+  "COBALSYN-PWY: superpathway of adenosylcobalamin salvage from cobinamide I"
+)
+
+pathways=as.factor(pathways)
+
+all_associations_filtered=all_associations_genus_metacyc[all_associations_genus_metacyc$X_features == "g__Bacteroides",]
+all_associations_filtered=all_associations_filtered[all_associations_filtered$Y_features %in% pathways,]
+all_associations_filtered <- all_associations_filtered %>%
+  mutate(Y_features = factor(Y_features, levels = pathways)) %>%
+  arrange(Y_features)
+
+col_name=all_associations_filtered$Y_features
+row_name=all_associations_filtered$X_features
+
+col_name=unique(col_name)
+row_name=unique(row_name)
+
+correlation_matrix <- matrix(all_associations_filtered$association, nrow = 1, ncol = 17, byrow = TRUE)
+rownames(correlation_matrix) <- row_name
+colnames(correlation_matrix) <- col_name
+
+classes=c(
+  "Thiamine",
+  "Riboflavin",
+  "Pantothenic acid",
+  "Pyridoxal 5'-phosphate",
+  "Biotin",
+  "Folate",
+  "Adenosylcobalamin",
+  "g__Bacteroides"
+)
 
 
-# Assign colors to the study groups
-colors <- c("lightpink", "lightgreen", "lightblue", "#AFA8F3")
-names(colors) <- c("PBS", "ASD_1", "ASD_2", "TD")
+color_palette <- c("red", "green", "#97DFFC", "orange", "#858AE3", "#34FFEE", "#FF0090", "#B8A954")
+class_mapping <- setNames(color_palette[1:length(classes)], classes)
 
-plot(pcoa_taxa$points, asp = 1, pch = 16, col = colors[taxa_metadata_mereged$Group],
-     xlab = "PCoA1", ylab = "PCoA2",cex = 1.5)
-legend("bottomleft", legend = names(colors), pch = 20, col = colors, cex = 1.5)
-group <- as.factor(taxa_metadata_mereged$Group)
-ordiellipse(pcoa_taxa, groups = group, col = colors[levels(group)], lwd = 2, label = TRUE,cex = 1.5)
+assigned_numbers <- c("Thiamine",
+                      "Thiamine",
+                      "Thiamine",
+                      "Thiamine",
+                      "Thiamine",
+                      "Thiamine",
+                      "Riboflavin",
+                      "Riboflavin",
+                      "Pantothenic acid",
+                      "Pantothenic acid",
+                      "Pyridoxal 5'-phosphate",
+                      "Pyridoxal 5'-phosphate",
+                      "Biotin",
+                      "Biotin",
+                      "Folate",
+                      "Folate",
+                      "Adenosylcobalamin",
+                      "g__Bacteroides")
 
+sectors=colnames(correlation_matrix)
+sectors["g__Bacteroides"] <- "g__Bacteroides"
 
-plot(pcoa_metacyc$points, asp = 1, pch = 16, col = colors[metacyc_metadata_mereged$Group],
-     xlab = "PCoA1", ylab = "PCoA2",cex = 1.5)
-legend("bottomleft", legend = names(colors), pch = 20, col = colors, cex = 1.5)
-group <- as.factor(metacyc_metadata_mereged$Group)
-ordiellipse(pcoa_metacyc, groups = group, col = colors[levels(group)], lwd = 2, label = TRUE,cex = 1.5)
+pathway_class_mapping <- setNames(assigned_numbers, sectors)
 
-
-
-#####plot
-par(mar=c(5.1, 4.1, 4.1, 8.1), xpd=TRUE)
-x_lim <- c(-0.35, 0.31)  # Adjust based on your data
-y_lim <- c(-0.3, 0.35) 
-
-
-x_lim <- c(-0.15, 0.12)  # Adjust based on your data
-y_lim <- c(-0.1, 0.1) 
-
-plot(pcoa_taxa$points, asp = 1, pch = 16, 
-     col = colors[taxa_metadata_mereged$Group],
-     xlab = "PCoA1", ylab = "PCoA2", cex = 1.5)
-
-
-
-############Bold the axes
-plot(pcoa_taxa$points, asp = 1, pch = 16, 
-     col = colors[taxa_metadata_mereged$Group],
-     xlab = "PCoA1", ylab = "PCoA2", cex = 1.5,
-     xlim = x_lim, ylim = y_lim,
-     axes = FALSE)  # Suppress default axes
-# Add custom axes with bold lines
-axis(1, lwd = 2)  # X-axis with bold line
-axis(2, lwd = 2)  # Y-axis with bold line
-# Box around the plot with bold line
-box(lwd = 2)  # Add box with bold line
-
-
-# Define the desired order
-desired_order <- c("PBS", "ASD_1", "ASD_2", "TD")
-# Reorder the colors vector
-ordered_colors <- colors[desired_order]
-
-# Add legend
-legend("topright", inset=c(0,0),  legend = names(colors), pch=16, col = colors,cex = 1, title="Group")
-
-library(ellipse) 
-for (g in levels(group)) {
-  group_points <- pcoa_taxa$points[group == g, ]
-  
-  # Calculate the mean and covariance
-  group_mean <- colMeans(group_points)
-  group_cov <- cov(group_points)
-  
-  # Generate ellipse data with a lower confidence level
-  ellipse_data <- ellipse(group_cov, centre = group_mean, level = 0.8)  # Adjust this value
-  
-  # Optionally scale the ellipse points
-  scale_factor <-1  # Adjust this value to scale the ellipse size
-  ellipse_data <- ellipse_data * scale_factor
-  
-  # Add background color for the ellipse
-  polygon(ellipse_data, border = NA, col = adjustcolor(colors[g], alpha.f = 0.3))
-  
-  # Draw ellipse outline
-  lines(ellipse_data, col = colors[g], lwd = 2)
+assigned_colors <- rep(NA, length(sectors))
+names(assigned_colors) <- sectors
+for (i in sectors) {
+  class_name <- pathway_class_mapping[[i]]
+  if (!is.null(class_name)) {
+    assigned_colors[i] <- class_mapping[class_name]
+  }
 }
+
+circos.par(canvas.xlim = c(-1.5, 1.5), canvas.ylim = c(-1.5, 1.5))
+
+chordDiagram(correlation_matrix, group = pathway_class_mapping, grid.col = assigned_colors,
+             annotationTrack = c("grid","axis"),
+             preAllocateTracks = list(
+               track.height = mm_h(4),
+               track.margin = c(mm_h(4), 0)
+             ))
+
+unique_classes=c(
+  "Thiamine",
+  "Riboflavin",
+  "Pantothenic acid",
+  "Pyridoxal 5'-phosphate",
+  "Biotin",
+  "Folate",
+  "Adenosylcobalamin"
+)
+
+legend(x = "topright", 
+       legend = unique_classes, 
+       fill = class_mapping[unique_classes], 
+       title = "Vitamin B Group cofactors", 
+       bty = "n", 
+       cex = 0.8, 
+       xpd = TRUE, 
+       inset = c(0, 0))
+
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  ylim = get.cell.meta.data("ylim")
+  sector.name = get.cell.meta.data("sector.index")
+  
+  if (sector.name != "TD") {
+    cleaned_text <- sub(":.*", "", sector.name)
+    
+    circos.text(CELL_META$xcenter, 
+                ylim[1] + cm_h(2), 
+                cleaned_text, 
+                facing = "clockwise",
+                niceFacing = TRUE, 
+                adj = c(0, 0.5),
+                cex = 0.8,
+                col = "black",
+                font = 2)
+  }
+}, bg.border = NA)
+
+
+
+
+
+
+
+
 
 
 

@@ -1,1 +1,239 @@
+################################################differential biotin genes
+biotin_ko_catalog=c(
+  "K00059",
+  "K00208",
+  "K00647",
+  "K00652",
+  "K00833",
+  "K01012",
+  "K01906",
+  "K01935",
+  "K02169",
+  "K02170",
+  "K02372",
+  "K09458",
+  "K09789",
+  "K16593",
+  "K19560",
+  "K19561",
+  "K19562",
+  "K19563",
+  "K25570")
+
+
+statistics_of_biotin_gene$differential_metabolites <- "NO"
+statistics_of_biotin_gene$differential_metabolites[statistics_of_biotin_gene$`Mean rank diff.` < 0 & statistics_of_biotin_gene$`P value` < 0.1] <- "DOWN"
+
+statistics_of_biotin_gene$delabel <- NA
+statistics_of_biotin_gene$metabolite_name <- rownames(statistics_of_biotin_gene)
+statistics_of_biotin_gene$delabel[statistics_of_biotin_gene$differential_metabolites != "NO"] <- statistics_of_biotin_gene$metabolite_name[statistics_of_biotin_gene$differential_metabolites != "NO"]
+statistics_of_biotin_gene$delabel[statistics_of_biotin_gene$differential_metabolites == "DOWN"] <- statistics_of_biotin_gene$metabolite_name[statistics_of_biotin_gene$differential_metabolites == "DOWN"]
+
+
+library(ggrepel)
+p <- ggplot(data = statistics_of_biotin_gene, 
+            aes(x = `Mean rank diff.`, y = -log10(`P value`), col = differential_metabolites, label = delabel)) +
+  geom_point() + 
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        plot.title = element_text(hjust = 0.5, face = "bold")) +  # Center and bold the title
+  geom_label_repel() +
+  scale_color_manual(values = c("#226CE0", "grey", "#CA3C25")) +
+  geom_vline(xintercept=0, col = "#8F5C38", linetype = "longdash") +
+  geom_hline(yintercept = -log10(0.05), col = "#8F5C38", linetype = "longdash") +
+  geom_hline(yintercept = -log10(0.1), col = "blue", linetype = "dashed")+
+  labs(title = "KEGG ORTHOLOGY in biotin metabolism") 
+p
+
+################################################biotin_ko-associated genera
+result_test <- all_associations %>%
+  filter(`q-values` < 0.05) %>%
+  group_by(Y_features) %>%
+  filter(n_distinct(X_features) > 6) %>%  # corresponds to 7 biotin associated ko identified above, makre sure the identified genera display disgnficant associations with all of these biotin-associated ko
+  ungroup() %>%
+  select(X_features, Y_features, association,`p-values`, `q-values`) %>%
+  distinct()%>%
+  group_by(Y_features) %>%
+  filter(all(association >= 0)) %>%
+  ungroup() 
+
+correlation_data <- result[order(result$X_features, result$Y_features), ]
+col_name=correlation_data$Y_features
+row_name=correlation_data$X_features
+
+col_name=unique(col_name)
+row_name=unique(row_name)
+
+correlation_matrix <- matrix(correlation_data$association, nrow = 7, ncol = 7, byrow = TRUE)
+rownames(correlation_matrix) <- row_name
+colnames(correlation_matrix) <- col_name
+
+order=c(
+  "K02170",
+  "K09458",
+  "K00647",
+  "K00208",
+  "K01906",
+  "K02169",
+  "K01935"
+)
+
+correlation_matrix=as.data.frame(correlation_matrix)
+correlation_matrix <- correlation_matrix[, order]
+
+pheatmap(correlation_matrix,treeheight_row = FALSE, treeheight_col=FALSE,
+         cluster_rows = TRUE,
+         cluster_cols = FALSE,
+         main = "association to the disease state",
+         number_color = "black",
+         border_color="black",
+         col=colorRampPalette(c("lightyellow", "red"))(100),
+         breaks = seq(0.2, 0.7, length.out = 101),
+         cellwidth = 15,
+         cellheight = 15)
+
+
+################################################biotin & pimelic acid (metabolite) associated bacteroides species
+#on terminal with the halla package
+halla -x ~/species_relab.txt -y ~/metabolite_log.txt -o species_vs_metabolite -m spearman --fdr_alpha 0.05
+
+################################################species contributing to biotin ko in FMT
+library(tidyverse)
+library(dplyr)
+
+biotin_ko=c("K00652",
+            "K00833",
+            "K01935",
+            "K01012")
+
+biotin_kegg_stratified <- ko_stratified_relab[grepl(paste(biotin_ko, collapse = "|"), rownames(ko_stratified_relab)), ]
+biotin_kegg_with_rownames <- rownames_to_column(biotin_kegg_stratified, var = "row_id")
+
+stratified_species_df <- biotin_kegg_with_rownames %>%
+  pivot_longer(cols = starts_with(c("A1_", "A2", "PBS", "TD")), 
+               names_to = "sample", 
+               values_to = "abundance") %>%
+  ungroup() %>%
+  arrange(sample, desc(abundance))
+
+stratified_species_df <- stratified_species_df %>%
+  mutate(sample_group = str_extract(sample, "^[^_]+"))
+stratified_species_df <- stratified_species_df %>%
+  mutate(sample_group = recode(sample_group, 
+                               "A1" = "ASD_1", 
+                               "A2" = "ASD_2"))
+
+df <- stratified_species_df %>%
+  separate(row_id, into = c("kegg", "species"), sep = "\\|")
+df <- df[df$abundance != 0, ]
+df <- df[df$species != "unclassified", ]
+
+K01012=df[df$kegg =="K01012",]
+K01935=df[df$kegg =="K01935",]
+K00833=df[df$kegg =="K00833",]
+K00652=df[df$kegg =="K00652",]
+
+
+p_K01012=ggplot(K01012, aes(x = sample, y = abundance, fill = species)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Microbial contributors to K01012 (bioB)", 
+       y = "Relative Abundance", x = "") +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    plot.title = element_text(size = 12, face = "bold"),
+    strip.text = element_text(size = 12),
+    legend.key.size = unit(0.5, "cm"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  ) +
+  scale_x_discrete(labels = function(x) gsub("_", " ", x)) +
+  facet_wrap( ~ sample_group, scales = "free_x") +
+  scale_fill_manual(values = color_mapping) 
+p_K01012
+
+
+p_K01935=ggplot(K01935, aes(x = sample, y = abundance, fill = species)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Microbial contributors to K01935 (bioD)", 
+       y = "Relative Abundance", x = "") +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    plot.title = element_text(size = 12, face = "bold"),
+    strip.text = element_text(size = 12),
+    legend.key.size = unit(0.5, "cm"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  ) +
+  scale_x_discrete(labels = function(x) gsub("_", " ", x)) +
+  facet_wrap( ~ sample_group, scales = "free_x") +
+  scale_fill_manual(values = color_mapping) 
+p_K01935
+
+p_K00833=ggplot(K00833, aes(x = sample, y = abundance, fill = species)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Microbial contributors to K00833 (bioA)", 
+       y = "Relative Abundance", x = "") +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    plot.title = element_text(size = 12, face = "bold"),
+    strip.text = element_text(size = 12),
+    legend.key.size = unit(0.5, "cm"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  ) +
+  scale_x_discrete(labels = function(x) gsub("_", " ", x)) +
+  facet_wrap( ~ sample_group, scales = "free_x") +
+  scale_fill_manual(values = color_mapping) 
+p_K00833
+
+p_K00652=ggplot(K00652, aes(x = sample, y = abundance, fill = species)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Microbial contributors to K00652 (bioF)", 
+       y = "Relative Abundance", x = "") +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    plot.title = element_text(size = 12, face = "bold"),
+    strip.text = element_text(size = 12),
+    legend.key.size = unit(0.5, "cm"),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    #legend.position = "bottom"
+  ) +
+  scale_x_discrete(labels = function(x) gsub("_", " ", x)) +
+  facet_wrap( ~ sample_group, scales = "free_x") +
+  scale_fill_manual(values = color_mapping) 
+p_K00652
+
+library(patchwork)
+combined_plot <- (p_K00652 + p_K00833) / (p_K01935 + p_K01012) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")   
+combined_plot
 

@@ -44,6 +44,6 @@ p1=p1 +geom_pwc(
   bracket.group.by = "x.var",
   vjust = 0.1,
   size=0.8,label.size = 5
-)+  ylim(0.5, 2.5)
+)+  ylim(0, 2.5)
 
 p1

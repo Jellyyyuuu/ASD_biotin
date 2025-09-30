@@ -1,0 +1,49 @@
+library(tidyverse)
+library(tibble)
+
+metadata <- rownames_to_column(metadata_2, var = "SampleID")
+gene_df <- rownames_to_column(gene_df, var = "SampleID")
+
+merged_data <- gene_df %>%
+  gather(gene, expression, `SOX10`:`MBP`) %>%
+  inner_join(metadata, by = "SampleID")
+  
+colors <- c("control" = "#FF9301", "biotin" = "#038F01")
+merged_data <- merged_data %>%
+  mutate(gene = factor(gene, levels = c("SOX10", "OLIG1","PDGFRA","MYRF","MAG","PLP","MBP")))
+
+library(ggpubr)
+p1= ggplot(merged_data, aes(x = gene, y = expression,fill=Group)) +
+  geom_boxplot(aes(fill = Group), alpha = 0.3, outlier.shape = NA,width = 1,varwidth=FALSE) +
+  geom_jitter(aes(color = Group),size = 2, alpha = 0.7,
+              position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.75)) +
+  scale_fill_manual(values = colors) +
+  scale_color_manual(values = colors) +
+  labs(x = "Gene", y = "Relative Expression",title="The expression of gene markers/nfor oligodendrocytes") +
+  #facet_wrap(~pathway, ncol = 2,scales = "free_x") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1,face = "bold", size = 10),
+    axis.title.y = element_text(size = 12),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(hjust = 0.5,size = 12,face = "bold")# Remove minor grid lines
+  )
+
+symnum.args <- list(cutpoints = c(0, 0.0001, 0.001, 0.01, 0.052, 0.1, Inf), symbols = c("****", "***", "**", "*", "#","ns"))
+
+p1=p1 +geom_pwc(
+  aes(group = Group, color = Group),
+  method = "t_test", 
+  label = "p.signif",
+  symnum.args = symnum.args, 
+  bracket.nudge.y= 0.1,
+  p.adjust.method="none",
+  tip.length = 0, 
+  group.by = "x.var",
+  bracket.group.by = "x.var",
+  vjust = 0.1,
+  size=0.8,label.size = 5
+)+  ylim(0.5, 2.5)
+
+p1

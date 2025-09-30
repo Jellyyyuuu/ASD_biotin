@@ -1,0 +1,156 @@
+
+biotin_pos=c(
+  "s__GGB28866_SGB41538",
+  "s__GGB28908_SGB41601",
+  "s__GGB31850_SGB45228",
+  "s__GGB3793_SGB41498",
+  "s__Heminiphilus_faecis",
+  "s__GGB28357_SGB40935",
+  "s__GGB28901_SGB41592",
+  "s__GGB31383_SGB44711"
+)
+biotin_neg=c(
+  "s__Schaedlerella_arabinosiphila",
+  "s__GGB5207_SGB43496",
+  "s__GGB27770_SGB40184",
+  "s__GGB28967_SGB41417",
+  "s__GGB45536_SGB63216",
+  "s__GGB28934_SGB41635",
+  "s__Sporofaciens_musculi",
+  "s__GGB30461_SGB43533",
+  "s__GGB45514_SGB63186",
+  "s__GGB74395_SGB43523"
+)
+
+all_associations_filtered <- all_associations %>%
+  filter(`p-values` < 0.05)
+
+biotin_positive_df <- all_associations_filtered %>% filter(X_features %in% biotin_pos)
+biotin_negative_df <- all_associations_filtered %>% filter(X_features %in% biotin_neg)
+
+#identify pathways with significant positive/negative associations for biotin+/-ve species
+biotin_pos_pos_asso <- biotin_positive_df %>% filter(association > 0) %>% 
+  group_by(Y_features) %>% summarise(count = n()) %>% filter(count >= 2)
+
+biotin_pos_neg_asso <- biotin_positive_df %>% filter(association < 0) %>% 
+  group_by(Y_features) %>% summarise(count = n()) %>% filter(count >= 2)
+
+biotin_neg_pos_asso <- biotin_negative_df %>% filter(association > 0) %>% 
+  group_by(Y_features) %>% summarise(count = n()) %>% filter(count >= 2)
+
+biotin_neg_neg_asso <- biotin_negative_df %>% filter(association < 0) %>% 
+  group_by(Y_features) %>% summarise(count = n()) %>% filter(count >= 2)
+
+#identify overlapping pathways
+overlaping_pathways_suppresed_by_biotin <- 
+  intersect(biotin_pos_neg_asso$Y_features, biotin_neg_pos_asso$Y_features)
+
+overlaping_pathways_promoted_by_biotin <- 
+  intersect(biotin_pos_pos_asso$Y_features, biotin_neg_neg_asso$Y_features)
+
+#plot heatmap
+library(pheatmap)
+pathway_markers <- union(
+  overlaping_pathways_promoted_by_biotin,
+  overlaping_pathways_suppresed_by_biotin
+)
+species_markers <- union(
+  biotin_neg,
+  biotin_pos)
+
+all_associations_plot <- all_associations[
+  all_associations$X_features %in% species_markers & 
+    all_associations$Y_features %in% pathway_markers, 
+]
+
+all_associations_plot <- all_associations_plot[order(all_associations_plot$X_features, all_associations_plot$Y_features), ]
+col_name=all_associations_plot$Y_features
+row_name=all_associations_plot$X_features
+
+col_name=unique(col_name)
+row_name=unique(row_name)
+
+correlation_matrix <- matrix(all_associations_plot$association, nrow = 18, ncol = 13, byrow = TRUE)
+rownames(correlation_matrix) <- row_name
+colnames(correlation_matrix) <- col_name
+
+pvalue_matrix <- matrix(all_associations_plot$`p-values`, nrow = 18, ncol = 13, byrow = TRUE)
+rownames(pvalue_matrix) <- row_name
+colnames(pvalue_matrix) <- col_name
+
+transform_values <- function(x) {
+  if (x < 0.01) {
+    return('**')
+  } else if (x < 0.05) {
+    return('*')
+  } else if (x < 0.1) {
+    return('#')
+  } else {
+    return('')
+  }
+}
+
+pvalue_matrix=as.data.frame(pvalue_matrix)
+for (col in names(pvalue_matrix)) {
+  pvalue_matrix[[paste0(col, "_Transformed")]] <- sapply(pvalue_matrix[[col]], transform_values)
+}
+
+colnames(pvalue_matrix) <- gsub("_Transformed", "", colnames(pvalue_matrix))
+pvalue_matrix=pvalue_matrix[,14:26]
+
+correlation_matrix=t(correlation_matrix)
+pvalue_matrix=t(pvalue_matrix)
+
+order=species_markers
+order=as.factor(order)
+
+order_pathway=pathway_markers
+order_pathway=as.factor(order_pathway)
+
+correlation_matrix=as.data.frame(correlation_matrix)
+correlation_matrix <- correlation_matrix[, order]
+correlation_matrix <- correlation_matrix[order_pathway,]
+
+pvalue_matrix=as.data.frame(pvalue_matrix)
+pvalue_matrix <- pvalue_matrix[, order]
+pvalue_matrix <- pvalue_matrix[order_pathway,]
+
+group_vector <- c(rep("Negative", 10), 
+                  rep("Positive", 8))
+annotation_df <- data.frame("Association to biotin serum conc." = group_vector, row.names = order)
+color_palette <- c("blue", "red")
+
+
+classes=c(
+  "Negative",
+  "Positive"
+)
+names(color_palette) <- classes
+annotation_colors <- list(Grouping = color_palette)
+
+custom_colors <- colorRampPalette(c("#2B5EF8", "white", "#FF4225"))(100)
+breaks <- seq(-1, 1, length.out = 101)
+custom_colors[which(breaks == 0)] <- "white"
+
+rownames(correlation_matrix) <- sub(":.*", "", rownames(correlation_matrix))
+rownames(pvalue_matrix) <- sub(":.*", "", rownames(pvalue_matrix))
+
+library(pheatmap)
+pheatmap(correlation_matrix,
+         treeheight_row = FALSE,
+         treeheight_col = FALSE,
+         display_numbers = pvalue_matrix,
+         fontsize_number = 12,
+         annotation_col = annotation_df,
+         #annotation_colors = annotation_colors,
+         cluster_rows = FALSE,
+         cluster_cols = FALSE,
+         main = "Microbial pathways associated \n with differential species",
+         number_color = "black",
+         border_color = "black",
+         col = custom_colors,
+         legend_labels = c("-1", "-0.5", "0", "0.5","1"),
+         cellwidth = 10,
+         cellheight = 10
+)
+
